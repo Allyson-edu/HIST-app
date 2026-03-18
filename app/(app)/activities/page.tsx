@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import ActivitiesClient from './ActivitiesClient'
 
 export default async function ActivitiesPage() {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
 

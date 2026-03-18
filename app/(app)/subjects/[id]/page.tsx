@@ -3,18 +3,19 @@ import { notFound } from 'next/navigation'
 import SubjectDetailClient from './SubjectDetailClient'
 
 interface Props {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 export default async function SubjectDetailPage({ params }: Props) {
-  const supabase = createClient()
+  const { id } = await params
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
 
   const { data: subject } = await supabase
     .from('subjects')
     .select('*')
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', user.id)
     .single()
 

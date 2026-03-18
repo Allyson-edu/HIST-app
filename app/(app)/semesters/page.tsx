@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import SemestersClient from './SemestersClient'
 
 export default async function SemestersPage() {
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
 
