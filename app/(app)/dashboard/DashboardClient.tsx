@@ -10,9 +10,10 @@ interface Props {
   subject: Subject
   attendance: AttendanceRecord | null
   todayStr: string
+  absencesCount?: number
 }
 
-export default function DashboardClient({ meeting, subject, attendance, todayStr }: Props) {
+export default function DashboardClient({ meeting, subject, attendance, todayStr, absencesCount = 0 }: Props) {
   const router = useRouter()
   const [currentAttendance, setCurrentAttendance] = useState<AttendanceRecord | null>(attendance)
   const [showNoteForm, setShowNoteForm] = useState(false)
@@ -75,6 +76,25 @@ export default function DashboardClient({ meeting, subject, attendance, todayStr
             {meeting.starts_at.slice(0, 5)} – {meeting.ends_at.slice(0, 5)}
             {subject.professor_name ? ` · ${subject.professor_name}` : ''}
           </p>
+          {subject.absences_limit != null && (
+            <div style={{ marginTop: 8 }}>
+              {(() => {
+                const max = subject.absences_limit as number
+                const pct = max > 0 ? Math.round((absencesCount / max) * 100) : 0
+                const barColor = pct >= 75 ? 'var(--red)' : pct >= 50 ? 'var(--yellow)' : 'var(--blue)'
+                return (
+                  <>
+                    <div style={{ background: '#EBEBEB', border: '1px solid var(--border)', height: 6 }}>
+                      <div style={{ background: barColor, width: `${Math.min(pct, 100)}%`, height: '100%' }} />
+                    </div>
+                    <p style={{ fontSize: 11, color: 'var(--gray)', marginTop: 2 }}>
+                      {absencesCount} faltas de {max} ({pct}%)
+                    </p>
+                  </>
+                )
+              })()}
+            </div>
+          )}
         </div>
         {currentAttendance && (
           <span className={`badge ${currentAttendance.status === 'present' ? 'badge-present' : 'badge-absent'}`}>

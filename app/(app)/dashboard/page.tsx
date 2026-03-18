@@ -1,5 +1,8 @@
-import { createClient } from '@/lib/supabase/server'
-import { BookOpen, Target, Bell } from 'lucide-react'
+'use client'
+
+import { useState, useEffect, useMemo } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { BookOpen, Target, Bell, Calendar } from 'lucide-react'
 import DashboardClient from './DashboardClient'
 import type { Subject, SubjectMeeting, AttendanceRecord, RecurringActivity, CalendarEvent, Weekday } from '@/types/database'
 
@@ -23,6 +26,16 @@ const weekdayPT: Record<Weekday, string> = {
   saturday: 'Sábado',
 }
 
+const weekdayShort: Record<number, string> = {
+  0: 'Dom',
+  1: 'Seg',
+  2: 'Ter',
+  3: 'Qua',
+  4: 'Qui',
+  5: 'Sex',
+  6: 'Sáb',
+}
+
 function formatDate(dateStr: string) {
   const [year, month, day] = dateStr.split('-')
   return `${day}/${month}/${year}`
@@ -34,106 +47,194 @@ function getGreeting(hour: number) {
   return 'Boa noite'
 }
 
-export default async function DashboardPage() {
-  const supabase = await createClient()
+interface MeetingWithSubject extends SubjectMeeting {
+  subjects: Subject
+}
 
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
+interface DashboardData {
+  username: string
+  semesterId: string | null
+  todayMeetings: MeetingWithSubject[]
+  todayActivities: RecurringActivity[]
+  upcomingEvents: CalendarEvent[]
+  attendanceRecords: AttendanceRecord[]
+  absencesPerSubject: Record<string, number>
+  daysWithClasses: Set<Weekday>
+  totalPresencas: number
+  totalFaltas: number
+  averageGrade: number | null
+}
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('username')
-    .eq('user_id', user.id)
-    .single()
+function SkeletonCard({ height = 72 }: { height?: number }) {
+  return <div className="skeleton" style={{ height }} />
+}
 
-  const username = profile?.username ?? user.email?.split('@')[0] ?? 'aluno'
+function getWeekDays(): Date[] {
+  const today = new Date()
+  const dayOfWeek = today.getDay()
+  const monday = new Date(today)
+  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+  monday.setDate(today.getDate() + diff)
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday)
+    d.setDate(monday.getDate() + i)
+    return d
+  })
+}
 
-  // Get active semester
-  const { data: semester } = await supabase
-    .from('semesters')
-    .select('id')
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-    .single()
+export default function DashboardPage() {
+  const [loading, setLoading] = useState(true)
+  const [data, setData] = useState<DashboardData | null>(null)
 
-  const todayDate = new Date()
-  const todayWeekday = weekdayMap[todayDate.getDay()]
-  const todayStr = todayDate.toISOString().split('T')[0]
-  const hour = todayDate.getHours()
+  const { todayDate, todayWeekday, todayStr, hour, todayFormatted } = useMemo(() => {
+    const date = new Date()
+    return {
+      todayDate: date,
+      todayWeekday: weekdayMap[date.getDay()],
+      todayStr: date.toISOString().split('T')[0],
+      hour: date.getHours(),
+      todayFormatted: date.toLocaleDateString('pt-BR', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      }),
+    }
+  }, [])
+
   const greeting = getGreeting(hour)
 
-  const todayFormatted = todayDate.toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
+  useEffect(() => {
+    const MS_PER_DAY = 24 * 60 * 60 * 1000
 
-  // Get today's meetings with subject info
-  interface MeetingWithSubject extends SubjectMeeting {
-    subjects: Subject
-  }
+    async function fetchData() {
+      const supabase = createClient()
 
-  let todayMeetings: MeetingWithSubject[] = []
-  let todayActivities: RecurringActivity[] = []
-  let upcomingEvents: CalendarEvent[] = []
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
 
-  if (semester) {
-    const { data: meetings } = await supabase
-      .from('subject_meetings')
-      .select('*, subjects(*)')
-      .eq('user_id', user.id)
-      .eq('day_of_week', todayWeekday)
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('user_id', user.id)
+        .single()
 
-    todayMeetings = (meetings as MeetingWithSubject[]) ?? []
+      const username = profile?.username ?? user.email?.split('@')[0] ?? 'aluno'
 
-    const { data: activities } = await supabase
-      .from('recurring_activities')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('semester_id', semester.id)
-      .eq('day_of_week', todayWeekday)
-      .order('starts_at')
+      const { data: semester } = await supabase
+        .from('semesters')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .single()
 
-    todayActivities = activities ?? []
+      let todayMeetings: MeetingWithSubject[] = []
+      let todayActivities: RecurringActivity[] = []
+      let upcomingEvents: CalendarEvent[] = []
+      let allAttendanceRecords: AttendanceRecord[] = []
+      let daysWithClasses = new Set<Weekday>()
+      let averageGrade: number | null = null
 
-    const in7Days = new Date(todayDate)
-    in7Days.setDate(in7Days.getDate() + 7)
-    const in7DaysStr = in7Days.toISOString().split('T')[0]
+      if (semester) {
+        const [
+          meetingsResult,
+          activitiesResult,
+          eventsResult,
+          attendanceResult,
+          allMeetingsResult,
+          gradeResult,
+        ] = await Promise.all([
+          supabase
+            .from('subject_meetings')
+            .select('*, subjects(*)')
+            .eq('user_id', user.id)
+            .eq('day_of_week', todayWeekday),
+          supabase
+            .from('recurring_activities')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('semester_id', semester.id)
+            .eq('day_of_week', todayWeekday)
+            .order('starts_at'),
+          supabase
+            .from('calendar_events')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('semester_id', semester.id)
+            .gte('event_date', todayStr)
+            .lte('event_date', new Date(todayDate.getTime() + 7 * MS_PER_DAY).toISOString().split('T')[0])
+            .order('event_date'),
+          supabase
+            .from('attendance_records')
+            .select('*')
+            .eq('user_id', user.id),
+          supabase
+            .from('subject_meetings')
+            .select('day_of_week')
+            .eq('user_id', user.id),
+          supabase
+            .from('grade_entries')
+            .select('points')
+            .eq('user_id', user.id),
+        ])
 
-    const { data: events } = await supabase
-      .from('calendar_events')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('semester_id', semester.id)
-      .gte('event_date', todayStr)
-      .lte('event_date', in7DaysStr)
-      .order('event_date')
+        todayMeetings = (meetingsResult.data as MeetingWithSubject[]) ?? []
+        todayActivities = activitiesResult.data ?? []
+        upcomingEvents = eventsResult.data ?? []
+        allAttendanceRecords = attendanceResult.data ?? []
+        daysWithClasses = new Set(
+          (allMeetingsResult.data ?? []).map((m: { day_of_week: Weekday }) => m.day_of_week)
+        )
 
-    upcomingEvents = events ?? []
-  }
+        const gradeEntries = gradeResult.data ?? []
+        if (gradeEntries.length > 0) {
+          const total = gradeEntries.reduce((sum: number, e: { points: number }) => sum + e.points, 0)
+          averageGrade = Math.round((total / gradeEntries.length) * 10) / 10
+        }
+      }
 
-  // Get attendance records for today
-  const subjectIds = todayMeetings.map((m) => m.subject_id)
-  let attendanceRecords: AttendanceRecord[] = []
+      const totalPresencas = allAttendanceRecords.filter(r => r.status === 'present').length
+      const totalFaltas = allAttendanceRecords.filter(r => r.status === 'absent').length
 
-  if (subjectIds.length > 0) {
-    const { data: records } = await supabase
-      .from('attendance_records')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('class_date', todayStr)
-      .in('subject_id', subjectIds)
+      const absencesPerSubject: Record<string, number> = {}
+      allAttendanceRecords
+        .filter(r => r.status === 'absent')
+        .forEach(r => {
+          absencesPerSubject[r.subject_id] = (absencesPerSubject[r.subject_id] ?? 0) + 1
+        })
 
-    attendanceRecords = records ?? []
-  }
+      const subjectIds = todayMeetings.map(m => m.subject_id)
+      const attendanceRecords = subjectIds.length > 0
+        ? allAttendanceRecords.filter(r => r.class_date === todayStr && subjectIds.includes(r.subject_id))
+        : []
+
+      setData({
+        username,
+        semesterId: semester?.id ?? null,
+        todayMeetings,
+        todayActivities,
+        upcomingEvents,
+        attendanceRecords,
+        absencesPerSubject,
+        daysWithClasses,
+        totalPresencas,
+        totalFaltas,
+        averageGrade,
+      })
+      setLoading(false)
+    }
+
+    fetchData()
+  }, [todayStr, todayWeekday, todayDate])
+
+  const weekDays = getWeekDays()
 
   return (
     <div>
       {/* Header */}
       <div className="mb-6">
         <h1 style={{ fontSize: 22, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4 }}>
-          {greeting}, {username}!
+          {greeting}, {loading ? '...' : (data?.username ?? 'aluno')}!
         </h1>
         <p style={{ fontSize: 13, color: 'var(--gray)', textTransform: 'capitalize' }}>
           {todayFormatted}
@@ -142,6 +243,42 @@ export default async function DashboardPage() {
 
       {/* Yellow stripe */}
       <div style={{ height: 4, background: 'var(--yellow)', marginBottom: 24 }} />
+
+      {/* Stat Cards */}
+      {loading ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
+          <SkeletonCard height={80} />
+          <SkeletonCard height={80} />
+          <SkeletonCard height={80} />
+        </div>
+      ) : (
+        <div className="animate-section" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
+          <div className="card-blue p-3" style={{ textAlign: 'center' }}>
+            <p style={{ fontSize: 28, fontWeight: 900, color: 'var(--blue)', lineHeight: 1 }}>
+              {data?.totalPresencas ?? 0}
+            </p>
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--gray)', marginTop: 4 }}>
+              Presenças
+            </p>
+          </div>
+          <div className="card-yellow p-3" style={{ textAlign: 'center' }}>
+            <p style={{ fontSize: 28, fontWeight: 900, color: 'var(--black)', lineHeight: 1 }}>
+              {data?.averageGrade !== null && data?.averageGrade !== undefined ? data.averageGrade : '—'}
+            </p>
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--gray)', marginTop: 4 }}>
+              Média
+            </p>
+          </div>
+          <div className="card-red p-3" style={{ textAlign: 'center' }}>
+            <p style={{ fontSize: 28, fontWeight: 900, color: 'var(--red)', lineHeight: 1 }}>
+              {data?.totalFaltas ?? 0}
+            </p>
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--gray)', marginTop: 4 }}>
+              Faltas
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Block 1: Aulas de Hoje */}
       <section className="mb-8">
@@ -155,14 +292,20 @@ export default async function DashboardPage() {
           </span>
         </div>
 
-        {todayMeetings.length === 0 ? (
-          <div className="card p-4">
+        {loading ? (
+          <div className="flex flex-col gap-3">
+            <SkeletonCard height={72} />
+            <SkeletonCard height={72} />
+          </div>
+        ) : data?.todayMeetings.length === 0 ? (
+          <div className="card p-4 animate-section">
             <p style={{ color: 'var(--gray)', fontSize: 14 }}>Sem aulas hoje 🎉</p>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
-            {todayMeetings.map((meeting) => {
-              const attendance = attendanceRecords.find((r) => r.subject_id === meeting.subject_id)
+          <div className="flex flex-col gap-3 animate-section">
+            {data?.todayMeetings.map((meeting) => {
+              const attendance = data.attendanceRecords.find((r) => r.subject_id === meeting.subject_id)
+              const absencesCount = data.absencesPerSubject[meeting.subject_id] ?? 0
               return (
                 <DashboardClient
                   key={meeting.id}
@@ -170,6 +313,7 @@ export default async function DashboardPage() {
                   subject={meeting.subjects}
                   attendance={attendance ?? null}
                   todayStr={todayStr}
+                  absencesCount={absencesCount}
                 />
               )
             })}
@@ -189,13 +333,15 @@ export default async function DashboardPage() {
           </h2>
         </div>
 
-        {todayActivities.length === 0 ? (
-          <div className="card p-4">
+        {loading ? (
+          <SkeletonCard height={64} />
+        ) : data?.todayActivities.length === 0 ? (
+          <div className="card p-4 animate-section">
             <p style={{ color: 'var(--gray)', fontSize: 14 }}>Nenhuma atividade hoje</p>
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
-            {todayActivities.map((activity) => (
+          <div className="flex flex-col gap-2 animate-section">
+            {data?.todayActivities.map((activity) => (
               <div key={activity.id} className="card p-4">
                 <p style={{ fontWeight: 700, fontSize: 14 }}>{activity.name}</p>
                 <p style={{ fontSize: 12, color: 'var(--gray)', marginTop: 2 }}>
@@ -211,7 +357,64 @@ export default async function DashboardPage() {
       {/* Yellow stripe */}
       <div style={{ height: 4, background: 'var(--yellow)', marginBottom: 24 }} />
 
-      {/* Block 3: Alertas e Prazos */}
+      {/* Block 3: Semana (Mini Calendar) */}
+      <section className="mb-8">
+        <div className="flex items-center gap-2 mb-3">
+          <Calendar size={16} style={{ color: 'var(--black)' }} />
+          <h2 style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+            Semana
+          </h2>
+        </div>
+
+        {loading ? (
+          <SkeletonCard height={72} />
+        ) : (
+          <div className="card p-3 animate-section">
+            <div style={{ display: 'flex', gap: 4, justifyContent: 'space-between' }}>
+              {weekDays.map((day) => {
+                const isToday = day.toDateString() === todayDate.toDateString()
+                const dayWeekday = weekdayMap[day.getDay()]
+                const hasClasses = data?.daysWithClasses.has(dayWeekday) ?? false
+                return (
+                  <div
+                    key={day.toDateString()}
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: 1 }}
+                  >
+                    <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', color: 'var(--gray)' }}>
+                      {weekdayShort[day.getDay()]}
+                    </span>
+                    <div
+                      style={{
+                        width: 36,
+                        height: 36,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 13,
+                        fontWeight: isToday ? 900 : 600,
+                        background: isToday ? 'var(--black)' : 'transparent',
+                        color: isToday ? '#fff' : 'var(--black)',
+                        border: isToday
+                          ? '2px solid var(--black)'
+                          : hasClasses
+                          ? '2px solid var(--blue)'
+                          : '2px solid transparent',
+                      }}
+                    >
+                      {day.getDate()}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Yellow stripe */}
+      <div style={{ height: 4, background: 'var(--yellow)', marginBottom: 24 }} />
+
+      {/* Block 4: Alertas e Prazos */}
       <section>
         <div className="flex items-center gap-2 mb-3">
           <Bell size={16} style={{ color: 'var(--yellow)' }} />
@@ -221,13 +424,18 @@ export default async function DashboardPage() {
           <span style={{ fontSize: 11, color: 'var(--gray)' }}>próximos 7 dias</span>
         </div>
 
-        {upcomingEvents.length === 0 ? (
-          <div className="card p-4">
+        {loading ? (
+          <div className="flex flex-col gap-2">
+            <SkeletonCard height={64} />
+            <SkeletonCard height={64} />
+          </div>
+        ) : data?.upcomingEvents.length === 0 ? (
+          <div className="card p-4 animate-section">
             <p style={{ color: 'var(--gray)', fontSize: 14 }}>Nenhum evento próximo</p>
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
-            {upcomingEvents.map((event) => (
+          <div className="flex flex-col gap-2 animate-section">
+            {data?.upcomingEvents.map((event) => (
               <div key={event.id} className="card p-4">
                 <div className="flex items-start gap-3">
                   <div
@@ -256,7 +464,7 @@ export default async function DashboardPage() {
           </div>
         )}
 
-        {!semester && (
+        {!loading && !data?.semesterId && (
           <p style={{ fontSize: 13, color: 'var(--gray)', marginTop: 12 }}>
             Crie um semestre para ver atividades e eventos.
           </p>
