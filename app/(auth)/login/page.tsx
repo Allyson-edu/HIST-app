@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -11,6 +11,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [rememberMe, setRememberMe] = useState(false)
+
+  useEffect(() => {
+    const saved = localStorage.getItem('hist_remembered_email')
+    if (saved) {
+      setEmail(saved)
+      setRememberMe(true)
+    }
+  }, [])
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -25,6 +34,12 @@ export default function LoginPage() {
       setError('Usuário ou senha inválidos.')
       setLoading(false)
       return
+    }
+
+    if (rememberMe) {
+      localStorage.setItem('hist_remembered_email', email.trim())
+    } else {
+      localStorage.removeItem('hist_remembered_email')
     }
 
     router.push('/dashboard')
@@ -83,6 +98,22 @@ export default function LoginPage() {
               required
               autoComplete="current-password"
             />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="checkbox"
+              id="rememberMe"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              style={{ width: 16, height: 16, accentColor: 'var(--black)', cursor: 'pointer' }}
+            />
+            <label
+              htmlFor="rememberMe"
+              style={{ fontSize: 13, color: 'var(--gray)', cursor: 'pointer', userSelect: 'none' }}
+            >
+              Lembrar neste dispositivo
+            </label>
           </div>
 
           {error && (
