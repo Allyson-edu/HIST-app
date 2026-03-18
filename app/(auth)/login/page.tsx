@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
   const router = useRouter()
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -18,9 +18,8 @@ export default function LoginPage() {
     setLoading(true)
 
     const supabase = createClient()
-    const email = `${username.trim().toLowerCase()}@hist2025.internal`
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
 
     if (error) {
       setError('Usuário ou senha inválidos.')
@@ -61,15 +60,15 @@ export default function LoginPage() {
 
         <form onSubmit={handleLogin} className="p-6 flex flex-col gap-4">
           <div>
-            <label className="label">Usuário</label>
+            <label className="label">Email</label>
             <input
               className="input"
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="seu_usuario"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="seu@email.com"
               required
-              autoComplete="username"
+              autoComplete="email"
             />
           </div>
 

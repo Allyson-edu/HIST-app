@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 export default function RegisterPage() {
   const router = useRouter()
   const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -31,10 +32,9 @@ export default function RegisterPage() {
     setLoading(true)
     const supabase = createClient()
     const cleanUsername = username.trim().toLowerCase()
-    const email = `${cleanUsername}@hist2025.internal`
 
     const { data, error: signUpError } = await supabase.auth.signUp({
-      email,
+      email: email.trim(),
       password,
       options: {
         data: { username: cleanUsername, full_name: fullName.trim() },
@@ -100,6 +100,19 @@ export default function RegisterPage() {
               onChange={(e) => setFullName(e.target.value)}
               placeholder="Seu nome completo"
               autoComplete="name"
+            />
+          </div>
+
+          <div>
+            <label className="label">Email</label>
+            <input
+              className="input"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="seu@email.com"
+              required
+              autoComplete="email"
             />
           </div>
 
