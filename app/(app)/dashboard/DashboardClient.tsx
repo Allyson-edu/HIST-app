@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
 import type { Subject, SubjectMeeting, AttendanceRecord } from '@/types/database'
 
 interface Props {
@@ -14,7 +13,6 @@ interface Props {
 }
 
 export default function DashboardClient({ meeting, subject, attendance, todayStr, absencesCount = 0 }: Props) {
-  const router = useRouter()
   const [currentAttendance, setCurrentAttendance] = useState<AttendanceRecord | null>(attendance)
   const [showNoteForm, setShowNoteForm] = useState(false)
   const [noteContent, setNoteContent] = useState('')
@@ -44,7 +42,6 @@ export default function DashboardClient({ meeting, subject, attendance, todayStr
       setCurrentAttendance(data)
     }
     setLoading(false)
-    router.refresh()
   }
 
   async function saveNote() {
@@ -64,7 +61,6 @@ export default function DashboardClient({ meeting, subject, attendance, todayStr
     setNoteContent('')
     setShowNoteForm(false)
     setLoading(false)
-    router.refresh()
   }
 
   return (

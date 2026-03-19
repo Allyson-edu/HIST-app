@@ -12,6 +12,7 @@ import {
   Menu,
   X,
   LogOut,
+  UserX,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -30,6 +31,7 @@ const mainNav: NavItem[] = [
 const toolsNav: NavItem[] = [
   { href: '/activities', label: 'Atividades', icon: <Target size={16} /> },
   { href: '/calendar', label: 'Calendário', icon: <Calendar size={16} /> },
+  { href: '/faltas', label: 'Faltas', icon: <UserX size={16} /> },
 ]
 
 interface SidebarProps {
