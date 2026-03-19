@@ -26,20 +26,25 @@ export default async function SubjectDetailPage({ params }: Props) {
     { data: gradeEntries },
     { data: classNotes },
     { data: attendanceRecords },
+    { data: subjectEvents },
   ] = await Promise.all([
     supabase.from('subject_meetings').select('*').eq('subject_id', subject.id).order('day_of_week'),
     supabase.from('grade_entries').select('*').eq('subject_id', subject.id).order('entry_date'),
     supabase.from('class_notes').select('*').eq('subject_id', subject.id).order('class_date', { ascending: false }),
     supabase.from('attendance_records').select('*').eq('subject_id', subject.id).order('class_date', { ascending: false }),
+    supabase.from('calendar_events').select('*').eq('subject_id', subject.id).order('event_date'),
   ])
 
   return (
-    <SubjectDetailClient
-      subject={subject}
-      meetings={meetings ?? []}
-      gradeEntries={gradeEntries ?? []}
-      classNotes={classNotes ?? []}
-      attendanceRecords={attendanceRecords ?? []}
-    />
+    <div className="page-transition">
+      <SubjectDetailClient
+        subject={subject}
+        meetings={meetings ?? []}
+        gradeEntries={gradeEntries ?? []}
+        classNotes={classNotes ?? []}
+        attendanceRecords={attendanceRecords ?? []}
+        subjectEvents={subjectEvents ?? []}
+      />
+    </div>
   )
 }

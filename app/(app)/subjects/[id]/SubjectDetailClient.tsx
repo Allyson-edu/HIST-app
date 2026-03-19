@@ -4,15 +4,29 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { ArrowLeft, Plus, Trash2, ExternalLink } from 'lucide-react'
-import type { Subject, SubjectMeeting, GradeEntry, ClassNote, AttendanceRecord, GradeUnit } from '@/types/database'
+import { ArrowLeft, Plus, Trash2, ExternalLink, Pencil } from 'lucide-react'
+import type { Subject, SubjectMeeting, GradeEntry, ClassNote, AttendanceRecord, GradeUnit, CalendarEvent, EventType } from '@/types/database'
 
 const weekdayPT: Record<string, string> = {
   monday: 'Segunda', tuesday: 'Terça', wednesday: 'Quarta',
   thursday: 'Quinta', friday: 'Sexta', saturday: 'Sábado', sunday: 'Domingo',
 }
 
-type Tab = 'info' | 'horarios' | 'notas' | 'diario' | 'faltas'
+const EVENT_TYPE_LABELS: Record<EventType, string> = {
+  prova: 'Prova',
+  trabalho: 'Trabalho',
+  seminario: 'Seminário',
+  outro: 'Outro',
+}
+
+const EVENT_TYPE_COLORS: Record<EventType, { bg: string; color: string }> = {
+  prova: { bg: 'var(--red)', color: '#fff' },
+  trabalho: { bg: 'var(--blue)', color: '#fff' },
+  seminario: { bg: 'var(--yellow)', color: 'var(--black)' },
+  outro: { bg: 'var(--light-gray)', color: 'var(--gray)' },
+}
+
+type Tab = 'info' | 'horarios' | 'notas' | 'diario' | 'eventos' | 'faltas'
 
 interface Props {
   subject: Subject
@@ -20,14 +34,16 @@ interface Props {
   gradeEntries: GradeEntry[]
   classNotes: ClassNote[]
   attendanceRecords: AttendanceRecord[]
+  subjectEvents: CalendarEvent[]
 }
 
-export default function SubjectDetailClient({ subject, meetings: initialMeetings, gradeEntries: initialGrades, classNotes: initialNotes, attendanceRecords }: Props) {
+export default function SubjectDetailClient({ subject, meetings: initialMeetings, gradeEntries: initialGrades, classNotes: initialNotes, attendanceRecords, subjectEvents: initialEvents }: Props) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<Tab>('info')
   const [meetings, setMeetings] = useState(initialMeetings)
   const [gradeEntries, setGradeEntries] = useState(initialGrades)
   const [classNotes, setClassNotes] = useState(initialNotes)
+  const [subjectEvents, setSubjectEvents] = useState(initialEvents)
 
   // Info form
   const [editName, setEditName] = useState(subject.name)
@@ -52,6 +68,16 @@ export default function SubjectDetailClient({ subject, meetings: initialMeetings
   const [noteDate, setNoteDate] = useState(new Date().toISOString().split('T')[0])
   const [noteContent, setNoteContent] = useState('')
   const [showNoteForm, setShowNoteForm] = useState(false)
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [editingNoteContent, setEditingNoteContent] = useState('')
+
+  // Events form
+  const [eventTitle, setEventTitle] = useState('')
+  const [eventDate, setEventDate] = useState(new Date().toISOString().split('T')[0])
+  const [eventType, setEventType] = useState<EventType>('prova')
+  const [eventDescription, setEventDescription] = useState('')
+  const [showEventForm, setShowEventForm] = useState(false)
+  const [eventSaving, setEventSaving] = useState(false)
 
   async function saveInfo() {
     setInfoSaving(true)
@@ -126,11 +152,45 @@ export default function SubjectDetailClient({ subject, meetings: initialMeetings
     setClassNotes((prev) => prev.filter((n) => n.id !== id))
   }
 
+  async function updateNote(id: string, content: string) {
+    const supabase = createClient()
+    await supabase.from('class_notes').update({ content }).eq('id', id)
+    setClassNotes((prev) => prev.map((n) => n.id === id ? { ...n, content } : n))
+    setEditingNoteId(null)
+  }
+
+  async function addEvent() {
+    if (!eventTitle.trim()) return
+    setEventSaving(true)
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setEventSaving(false); return }
+    const { data } = await supabase.from('calendar_events').insert({
+      user_id: user.id,
+      semester_id: subject.semester_id,
+      subject_id: subject.id,
+      title: eventTitle.trim(),
+      event_date: eventDate,
+      event_type: eventType,
+      description: eventDescription.trim() || null,
+    }).select().single()
+    if (data) setSubjectEvents((prev) => [...prev, data].sort((a, b) => a.event_date.localeCompare(b.event_date)))
+    setEventTitle(''); setEventDescription(''); setShowEventForm(false)
+    setEventSaving(false)
+  }
+
+  async function deleteEvent(id: string) {
+    const supabase = createClient()
+    await supabase.from('calendar_events').delete().eq('id', id)
+    setSubjectEvents((prev) => prev.filter((e) => e.id !== id))
+  }
+
   const tabs: { key: Tab; label: string }[] = [
     { key: 'info', label: 'INFO' },
     { key: 'horarios', label: 'HORÁRIOS' },
     { key: 'notas', label: 'NOTAS' },
     { key: 'diario', label: 'DIÁRIO' },
+    { key: 'eventos', label: 'EVENTOS' },
     { key: 'faltas', label: 'FALTAS' },
   ]
 
@@ -359,19 +419,153 @@ export default function SubjectDetailClient({ subject, meetings: initialMeetings
           ) : (
             classNotes.map((note) => (
               <div key={note.id} className="card p-4 mb-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray)', marginBottom: 4 }}>
+                {editingNoteId === note.id ? (
+                  <div className="flex flex-col gap-2">
+                    <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray)', marginBottom: 2 }}>
                       {formatDate(note.class_date)}
                     </p>
-                    <p style={{ fontSize: 14, whiteSpace: 'pre-wrap' }}>{note.content}</p>
+                    <textarea
+                      className="input"
+                      rows={4}
+                      value={editingNoteContent}
+                      onChange={(e) => setEditingNoteContent(e.target.value)}
+                      style={{ resize: 'vertical' }}
+                      autoFocus
+                    />
+                    <div className="flex gap-2">
+                      <button className="btn-primary" onClick={() => updateNote(note.id, editingNoteContent)} disabled={!editingNoteContent.trim()}>
+                        Salvar
+                      </button>
+                      <button className="btn-secondary" onClick={() => setEditingNoteId(null)}>Cancelar</button>
+                    </div>
                   </div>
-                  <button onClick={() => deleteNote(note.id)} style={{ color: 'var(--red)', flexShrink: 0 }}>
-                    <Trash2 size={14} />
-                  </button>
-                </div>
+                ) : (
+                  <div className="flex items-start justify-between gap-2">
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray)', marginBottom: 4 }}>
+                        {formatDate(note.class_date)}
+                      </p>
+                      <p style={{ fontSize: 14, whiteSpace: 'pre-wrap' }}>{note.content}</p>
+                    </div>
+                    <div className="flex gap-2" style={{ flexShrink: 0 }}>
+                      <button
+                        onClick={() => { setEditingNoteId(note.id); setEditingNoteContent(note.content) }}
+                        style={{ color: 'var(--blue)' }}
+                        title="Editar"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button onClick={() => deleteNote(note.id)} style={{ color: 'var(--red)' }}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))
+          )}
+        </div>
+      )}
+
+      {/* Tab: EVENTOS */}
+      {activeTab === 'eventos' && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <p style={{ fontSize: 13, color: 'var(--gray)' }}>{subjectEvents.length} evento{subjectEvents.length !== 1 ? 's' : ''}</p>
+            <button className="btn-primary" onClick={() => setShowEventForm(true)}>
+              <Plus size={14} /> Novo Evento
+            </button>
+          </div>
+
+          {showEventForm && (
+            <div className="card p-4 mb-4">
+              <div className="flex flex-col gap-2">
+                <div>
+                  <label className="label">Título *</label>
+                  <input className="input" placeholder="Ex: Prova Final" value={eventTitle} onChange={(e) => setEventTitle(e.target.value)} />
+                </div>
+                <div>
+                  <label className="label">Data *</label>
+                  <input className="input" type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} />
+                </div>
+                <div>
+                  <label className="label">Tipo</label>
+                  <select className="input" value={eventType} onChange={(e) => setEventType(e.target.value as EventType)}>
+                    <option value="prova">Prova</option>
+                    <option value="trabalho">Trabalho</option>
+                    <option value="seminario">Seminário</option>
+                    <option value="outro">Outro</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Descrição</label>
+                  <textarea className="input" rows={3} placeholder="Detalhes opcionais..." value={eventDescription} onChange={(e) => setEventDescription(e.target.value)} style={{ resize: 'vertical' }} />
+                </div>
+                <div className="flex gap-2">
+                  <button className="btn-primary" onClick={addEvent} disabled={!eventTitle.trim() || eventSaving}>
+                    {eventSaving ? 'Salvando...' : 'Salvar'}
+                  </button>
+                  <button className="btn-secondary" onClick={() => { setShowEventForm(false); setEventTitle(''); setEventDescription('') }}>Cancelar</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {subjectEvents.length === 0 ? (
+            <p style={{ color: 'var(--gray)', fontSize: 14 }}>Nenhum evento cadastrado.</p>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {subjectEvents.map((event) => {
+                const typeColors = event.event_type ? EVENT_TYPE_COLORS[event.event_type] : null
+                return (
+                  <div key={event.id} className="card p-4">
+                    <div className="flex items-start gap-3">
+                      <div
+                        style={{
+                          background: 'var(--yellow)',
+                          border: '2px solid var(--black)',
+                          padding: '4px 8px',
+                          fontSize: 11,
+                          fontWeight: 800,
+                          minWidth: 48,
+                          textAlign: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {formatDate(event.event_date).slice(0, 5)}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p style={{ fontWeight: 700, fontSize: 14 }}>{event.title}</p>
+                          {event.event_type && typeColors && (
+                            <span
+                              style={{
+                                fontSize: 9,
+                                fontWeight: 800,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.06em',
+                                padding: '2px 6px',
+                                background: typeColors.bg,
+                                color: typeColors.color,
+                                border: '1px solid var(--black)',
+                              }}
+                            >
+                              {EVENT_TYPE_LABELS[event.event_type]}
+                            </span>
+                          )}
+                        </div>
+                        {event.description && (
+                          <p style={{ fontSize: 12, color: 'var(--gray)', marginTop: 2 }}>{event.description}</p>
+                        )}
+                      </div>
+                      <button onClick={() => deleteEvent(event.id)} style={{ color: 'var(--red)', flexShrink: 0 }}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           )}
         </div>
       )}

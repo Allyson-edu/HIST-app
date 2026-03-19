@@ -14,7 +14,11 @@ export default async function SubjectsPage() {
     .single()
 
   if (!activeSemester) {
-    return <SubjectsClient activeSemester={null} subjects={[]} />
+    return (
+      <div className="page-transition">
+        <SubjectsClient activeSemester={null} subjects={[]} />
+      </div>
+    )
   }
 
   const { data: subjects } = await supabase
@@ -45,5 +49,9 @@ export default async function SubjectsPage() {
     })
   )
 
-  return <SubjectsClient activeSemester={activeSemester} subjects={subjectsWithData} />
+  return (
+    <div className="page-transition">
+      <SubjectsClient activeSemester={activeSemester} subjects={subjectsWithData} />
+    </div>
+  )
 }

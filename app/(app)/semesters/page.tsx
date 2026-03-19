@@ -28,9 +28,11 @@ export default async function SemestersPage() {
   )
 
   return (
-    <SemestersClient
-      activeSemesters={activeSemesters}
-      archivedSemesters={archivedWithCounts}
-    />
+    <div className="page-transition">
+      <SemestersClient
+        activeSemesters={activeSemesters}
+        archivedSemesters={archivedWithCounts}
+      />
+    </div>
   )
 }

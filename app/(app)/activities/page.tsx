@@ -14,7 +14,11 @@ export default async function ActivitiesPage() {
     .single()
 
   if (!activeSemester) {
-    return <ActivitiesClient activeSemester={null} activities={[]} />
+    return (
+      <div className="page-transition">
+        <ActivitiesClient activeSemester={null} activities={[]} />
+      </div>
+    )
   }
 
   const { data: activities } = await supabase
@@ -25,5 +29,9 @@ export default async function ActivitiesPage() {
     .order('day_of_week')
     .order('starts_at')
 
-  return <ActivitiesClient activeSemester={activeSemester} activities={activities ?? []} />
+  return (
+    <div className="page-transition">
+      <ActivitiesClient activeSemester={activeSemester} activities={activities ?? []} />
+    </div>
+  )
 }

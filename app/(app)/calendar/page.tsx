@@ -14,7 +14,11 @@ export default async function CalendarPage() {
     .single()
 
   if (!activeSemester) {
-    return <CalendarClient activeSemester={null} events={[]} />
+    return (
+      <div className="page-transition">
+        <CalendarClient activeSemester={null} events={[]} />
+      </div>
+    )
   }
 
   const { data: events } = await supabase
@@ -24,5 +28,9 @@ export default async function CalendarPage() {
     .eq('semester_id', activeSemester.id)
     .order('event_date')
 
-  return <CalendarClient activeSemester={activeSemester} events={events ?? []} />
+  return (
+    <div className="page-transition">
+      <CalendarClient activeSemester={activeSemester} events={events ?? []} />
+    </div>
+  )
 }
