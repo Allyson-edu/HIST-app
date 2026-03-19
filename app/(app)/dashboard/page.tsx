@@ -64,8 +64,6 @@ interface DashboardData {
   attendanceRecords: AttendanceRecord[]
   absencesPerSubject: Record<string, number>
   daysWithClasses: Set<Weekday>
-  totalPresencas: number
-  totalFaltas: number
 }
 
 function SkeletonCard({ height = 72 }: { height?: number }) {
@@ -187,9 +185,6 @@ export default function DashboardPage() {
         )
       }
 
-      const totalPresencas = allAttendanceRecords.filter(r => r.status === 'present').length
-      const totalFaltas = allAttendanceRecords.filter(r => r.status === 'absent').length
-
       const absencesPerSubject: Record<string, number> = {}
       allAttendanceRecords
         .filter(r => r.status === 'absent')
@@ -211,8 +206,6 @@ export default function DashboardPage() {
         attendanceRecords,
         absencesPerSubject,
         daysWithClasses,
-        totalPresencas,
-        totalFaltas,
       })
       setLoading(false)
     }
@@ -236,33 +229,6 @@ export default function DashboardPage() {
 
       {/* Yellow stripe */}
       <div style={{ height: 4, background: 'var(--yellow)', marginBottom: 24 }} />
-
-      {/* Stat Cards */}
-      {loading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 24 }}>
-          <SkeletonCard height={80} />
-          <SkeletonCard height={80} />
-        </div>
-      ) : (
-        <div className="animate-section" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 24 }}>
-          <div className="card-blue p-3" style={{ textAlign: 'center' }}>
-            <p style={{ fontSize: 28, fontWeight: 900, color: 'var(--blue)', lineHeight: 1 }}>
-              {data?.totalPresencas ?? 0}
-            </p>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--gray)', marginTop: 4 }}>
-              Presenças
-            </p>
-          </div>
-          <div className="card-red p-3" style={{ textAlign: 'center' }}>
-            <p style={{ fontSize: 28, fontWeight: 900, color: 'var(--red)', lineHeight: 1 }}>
-              {data?.totalFaltas ?? 0}
-            </p>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--gray)', marginTop: 4 }}>
-              Faltas
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* Block 1: Aulas de Hoje */}
       <section className="mb-8">

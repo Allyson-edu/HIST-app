@@ -171,7 +171,6 @@ export default function SubjectDetailClient({ subject, meetings: initialMeetings
       subject_id: subject.id,
       title: eventTitle.trim(),
       event_date: eventDate,
-      event_type: eventType,
       description: eventDescription.trim() || null,
     }).select().single()
     if (data) setSubjectEvents((prev) => [...prev, data].sort((a, b) => a.event_date.localeCompare(b.event_date)))
