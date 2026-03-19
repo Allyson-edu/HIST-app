@@ -95,12 +95,16 @@ export interface RecurringActivity {
   updated_at: string
 }
 
+export type EventType = 'prova' | 'trabalho' | 'seminario' | 'outro'
+
 export interface CalendarEvent {
   id: string
   user_id: string
   semester_id: string
+  subject_id: string | null
   title: string
   event_date: string
+  event_type: EventType | null
   description: string | null
   created_at: string
   updated_at: string

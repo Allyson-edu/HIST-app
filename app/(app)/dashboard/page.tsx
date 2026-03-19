@@ -6,6 +6,10 @@ import { BookOpen, Target, Bell, Calendar } from 'lucide-react'
 import DashboardClient from './DashboardClient'
 import type { Subject, SubjectMeeting, AttendanceRecord, RecurringActivity, CalendarEvent, Weekday } from '@/types/database'
 
+interface EventWithSubject extends CalendarEvent {
+  subjects: { name: string } | null
+}
+
 const weekdayMap: Record<number, Weekday> = {
   0: 'sunday',
   1: 'monday',
@@ -56,13 +60,12 @@ interface DashboardData {
   semesterId: string | null
   todayMeetings: MeetingWithSubject[]
   todayActivities: RecurringActivity[]
-  upcomingEvents: CalendarEvent[]
+  upcomingEvents: EventWithSubject[]
   attendanceRecords: AttendanceRecord[]
   absencesPerSubject: Record<string, number>
   daysWithClasses: Set<Weekday>
   totalPresencas: number
   totalFaltas: number
-  averageGrade: number | null
 }
 
 function SkeletonCard({ height = 72 }: { height?: number }) {
@@ -130,10 +133,9 @@ export default function DashboardPage() {
 
       let todayMeetings: MeetingWithSubject[] = []
       let todayActivities: RecurringActivity[] = []
-      let upcomingEvents: CalendarEvent[] = []
+      let upcomingEvents: EventWithSubject[] = []
       let allAttendanceRecords: AttendanceRecord[] = []
       let daysWithClasses = new Set<Weekday>()
-      let averageGrade: number | null = null
 
       if (semester) {
         const [
@@ -142,13 +144,13 @@ export default function DashboardPage() {
           eventsResult,
           attendanceResult,
           allMeetingsResult,
-          gradeResult,
         ] = await Promise.all([
           supabase
             .from('subject_meetings')
-            .select('*, subjects(*)')
+            .select('*, subjects!inner(*)')
             .eq('user_id', user.id)
-            .eq('day_of_week', todayWeekday),
+            .eq('day_of_week', todayWeekday)
+            .eq('subjects.semester_id', semester.id),
           supabase
             .from('recurring_activities')
             .select('*')
@@ -158,7 +160,7 @@ export default function DashboardPage() {
             .order('starts_at'),
           supabase
             .from('calendar_events')
-            .select('*')
+            .select('*, subjects(name)')
             .eq('user_id', user.id)
             .eq('semester_id', semester.id)
             .gte('event_date', todayStr)
@@ -166,31 +168,23 @@ export default function DashboardPage() {
             .order('event_date'),
           supabase
             .from('attendance_records')
-            .select('*')
-            .eq('user_id', user.id),
+            .select('*, subjects!inner(semester_id)')
+            .eq('user_id', user.id)
+            .eq('subjects.semester_id', semester.id),
           supabase
             .from('subject_meetings')
-            .select('day_of_week')
-            .eq('user_id', user.id),
-          supabase
-            .from('grade_entries')
-            .select('points')
-            .eq('user_id', user.id),
+            .select('day_of_week, subjects!inner(semester_id)')
+            .eq('user_id', user.id)
+            .eq('subjects.semester_id', semester.id),
         ])
 
         todayMeetings = (meetingsResult.data as MeetingWithSubject[]) ?? []
         todayActivities = activitiesResult.data ?? []
-        upcomingEvents = eventsResult.data ?? []
-        allAttendanceRecords = attendanceResult.data ?? []
+        upcomingEvents = (eventsResult.data as EventWithSubject[]) ?? []
+        allAttendanceRecords = (attendanceResult.data as AttendanceRecord[]) ?? []
         daysWithClasses = new Set(
           (allMeetingsResult.data ?? []).map((m: { day_of_week: Weekday }) => m.day_of_week)
         )
-
-        const gradeEntries = gradeResult.data ?? []
-        if (gradeEntries.length > 0) {
-          const total = gradeEntries.reduce((sum: number, e: { points: number }) => sum + e.points, 0)
-          averageGrade = Math.round((total / gradeEntries.length) * 10) / 10
-        }
       }
 
       const totalPresencas = allAttendanceRecords.filter(r => r.status === 'present').length
@@ -219,7 +213,6 @@ export default function DashboardPage() {
         daysWithClasses,
         totalPresencas,
         totalFaltas,
-        averageGrade,
       })
       setLoading(false)
     }
@@ -230,7 +223,7 @@ export default function DashboardPage() {
   const weekDays = getWeekDays()
 
   return (
-    <div>
+    <div className="page-transition">
       {/* Header */}
       <div className="mb-6">
         <h1 style={{ fontSize: 22, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 4 }}>
@@ -246,27 +239,18 @@ export default function DashboardPage() {
 
       {/* Stat Cards */}
       {loading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
-          <SkeletonCard height={80} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 24 }}>
           <SkeletonCard height={80} />
           <SkeletonCard height={80} />
         </div>
       ) : (
-        <div className="animate-section" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
+        <div className="animate-section" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 24 }}>
           <div className="card-blue p-3" style={{ textAlign: 'center' }}>
             <p style={{ fontSize: 28, fontWeight: 900, color: 'var(--blue)', lineHeight: 1 }}>
               {data?.totalPresencas ?? 0}
             </p>
             <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--gray)', marginTop: 4 }}>
               Presenças
-            </p>
-          </div>
-          <div className="card-yellow p-3" style={{ textAlign: 'center' }}>
-            <p style={{ fontSize: 28, fontWeight: 900, color: 'var(--black)', lineHeight: 1 }}>
-              {data?.averageGrade !== null && data?.averageGrade !== undefined ? data.averageGrade : '—'}
-            </p>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--gray)', marginTop: 4 }}>
-              Média
             </p>
           </div>
           <div className="card-red p-3" style={{ textAlign: 'center' }}>
@@ -452,8 +436,39 @@ export default function DashboardPage() {
                   >
                     {formatDate(event.event_date).slice(0, 5)}
                   </div>
-                  <div>
-                    <p style={{ fontWeight: 700, fontSize: 14 }}>{event.title}</p>
+                  <div style={{ flex: 1 }}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p style={{ fontWeight: 700, fontSize: 14 }}>{event.title}</p>
+                      {event.event_type && (
+                        <span
+                          style={{
+                            fontSize: 9,
+                            fontWeight: 800,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.06em',
+                            padding: '2px 6px',
+                            background:
+                              event.event_type === 'prova' ? 'var(--red)' :
+                              event.event_type === 'trabalho' ? 'var(--blue)' :
+                              event.event_type === 'seminario' ? 'var(--yellow)' :
+                              'var(--light-gray)',
+                            color:
+                              event.event_type === 'prova' ? '#fff' :
+                              event.event_type === 'trabalho' ? '#fff' :
+                              event.event_type === 'seminario' ? 'var(--black)' :
+                              'var(--gray)',
+                            border: '1px solid var(--black)',
+                          }}
+                        >
+                          {event.event_type}
+                        </span>
+                      )}
+                    </div>
+                    {event.subjects?.name && (
+                      <p style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600, marginTop: 2 }}>
+                        {event.subjects.name}
+                      </p>
+                    )}
                     {event.description && (
                       <p style={{ fontSize: 12, color: 'var(--gray)', marginTop: 2 }}>{event.description}</p>
                     )}
